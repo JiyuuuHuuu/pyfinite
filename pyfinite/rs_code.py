@@ -63,7 +63,7 @@ class RSCode:
 ...         C.RandomTest(25)
 """
 
-    def __init__(self,n,k,log2FieldSize=-1,systematic=1,shouldUseLUT=-1):
+    def __init__(self,k,r,log2FieldSize=-1,systematic=1,shouldUseLUT=-1,isal='true'):
         """
         Function:   __init__(n,k,log2FieldSize,systematic,shouldUseLUT)
         Purpose:    Create a Reed-Solomon coder for an (n,k) code.
@@ -85,18 +85,30 @@ class RSCode:
                     If shouldUseLUT = -1 (the default), then the code
                     decides when a lookup table should be used.
         """
-        if (log2FieldSize < 0):
-            log2FieldSize = int(math.ceil(math.log(n)/math.log(2)))
-        self.field = ffield.FField(log2FieldSize,useLUT=shouldUseLUT)
-        self.n = n
-        self.k = k
-        self.fieldSize = 1 << log2FieldSize
-        self.CreateEncoderMatrix()
-        if (systematic):
-            self.encoderMatrix.Transpose()
-            self.encoderMatrix.LowerGaussianElim()
-            self.encoderMatrix.UpperInverse()
-            self.encoderMatrix.Transpose()
+        if not isal:
+            if (log2FieldSize < 0):
+                log2FieldSize = int(math.ceil(math.log(n)/math.log(2)))
+            self.field = ffield.FField(log2FieldSize,useLUT=shouldUseLUT)
+            self.r = r
+            self.n = k+r
+            self.k = k
+            self.fieldSize = 1 << log2FieldSize
+            self.CreateEncoderMatrix()
+            if (systematic):
+                self.encoderMatrix.Transpose()
+                self.encoderMatrix.LowerGaussianElim()
+                self.encoderMatrix.UpperInverse()
+                self.encoderMatrix.Transpose()
+        else:
+            log2FieldSize = 8
+            self.field = ffield.FField(log2FieldSize,gen=285) # generator polinomial used by isa-l
+            self.r = r
+            self.n = k+r
+            self.k = k
+            self.fieldSize = 1 << log2FieldSize
+            self.CreateEncoderMatrixIsaRsv()
+            # self.encoderMatrix.Print('hex')
+
 
     def __repr__(self):
         rep = ('<RSCode (n,k) = (' + repr(self.n) +', ' + repr(self.k) + ')'
@@ -114,7 +126,41 @@ class RSCode:
             for j in range(0, self.k):
                 self.encoderMatrix[i,j] = term
                 term = self.field.Multiply(term,i)
+    
+    def CreateEncoderMatrixIsaRsv(self):
+        self.encoderMatrix = genericmatrix.GenericMatrix(
+            (self.r,self.k),0,1,self.field.Add,self.field.Subtract,
+            self.field.Multiply,self.field.Divide)
+        self.encoderMatrix[0,0] = 1
+        gen = 1
+        for i in range(0,self.r):
+            term = 1
+            for j in range(0,self.k):
+                self.encoderMatrix[i,j] = term
+                term = self.field.Multiply(term,gen)
+            gen = self.field.Multiply(gen,2)
 
+    def CreateEncoderBitMatrix(self, w):
+        self.encoderBitmatrix = genericmatrix.GenericMatrix(
+            (self.r*w,self.k*w),0,1,self.field.Add,self.field.Subtract,
+            self.field.Multiply,self.field.Divide)
+        
+        # adapted from jerasure
+        rowindex = 0
+
+        for i in range(self.r):
+            colindex = rowindex
+            for j in range(self.k):
+                elt = self.encoderMatrix[i,j]
+                for x in range(w):
+                    for l in range(w):
+                        check = elt & (1<<l)
+                        if check == 0:
+                            self.encoderBitmatrix[i*w+x,j*w+l] = 0
+                        else:
+                            self.encoderBitmatrix[i*w+x,j*w+l] = 1
+                    elt = self.field.Multiply(elt,2)
+        return self.encoderBitmatrix.AsList()
 
     def Encode(self,data):
         """

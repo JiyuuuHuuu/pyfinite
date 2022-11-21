@@ -250,6 +250,10 @@ ValueError: matrix not invertible
                                mul=self.mul,div=self.div,eq=self.eq,
                                str=self.str,equalsZero=self.equalsZero,
                                fillMode=fillMode)
+
+    
+    def AsList(self):
+        return self.data
         
 
     def __repr__(self):
@@ -334,6 +338,18 @@ ValueError: matrix not invertible
         for r in self.data:
             result.append(r[c])
         return result
+
+    def Print(self, mode='dec'):
+        for a in self.data:
+            for b in a:
+                if (mode == 'dec'):
+                    print(b, end=' ')
+                elif (mode == 'hex'):
+                    print(hex(b), end=' ')
+                else:
+                    print('Invalid mode!')
+                    return
+            print('')
 
     def Transpose(self):
         oldData = self.data
