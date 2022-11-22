@@ -17,6 +17,29 @@ from pyfinite import ffield, genericmatrix
 import math
 import doctest
 
+def MatrixToBitMatrix(matrix, w, field):
+    m = matrix.Size()[0]*w
+    n = matrix.Size()[1]*w
+    Bitmatrix = genericmatrix.GenericMatrix(
+            (m,n),0,1,field.Add,field.Subtract,
+            field.Multiply,field.Divide)
+        
+    # adapted from jerasure
+    rowindex = 0
+
+    for i in range(matrix.Size()[0]):
+        colindex = rowindex
+        for j in range(matrix.Size()[1]):
+            elt = matrix[i,j]
+            for x in range(w):
+                for l in range(w):
+                    check = elt & (1<<l)
+                    if check == 0:
+                        Bitmatrix[i*w+x,j*w+l] = 0
+                    else:
+                        Bitmatrix[i*w+x,j*w+l] = 1
+                elt = field.Multiply(elt,2)
+    return Bitmatrix
 
 class RSCode:
     """
@@ -141,26 +164,35 @@ class RSCode:
             gen = self.field.Multiply(gen,2)
 
     def CreateEncoderBitMatrix(self, w):
-        self.encoderBitmatrix = genericmatrix.GenericMatrix(
-            (self.r*w,self.k*w),0,1,self.field.Add,self.field.Subtract,
+        encoderBitmatrix = MatrixToBitMatrix(self.encoderMatrix, w, self.field)
+        return encoderBitmatrix.AsList()
+
+    def CreateDecoderBitMatrix(self, w, drop):
+        assert len(drop) == self.r
+        for a in drop:
+            assert a < self.k
+
+        identitymatrix = self.encoderMatrix.MakeSimilarMatrix((self.k,self.k), 'i')    
+
+        limitedEncoder = genericmatrix.GenericMatrix(
+            (self.k,self.k),0,1,self.field.Add,self.field.Subtract,
             self.field.Multiply,self.field.Divide)
-        
-        # adapted from jerasure
-        rowindex = 0
+
+        decoder_idx = 0
+        for i in range(self.k):
+            if i not in drop:
+                limitedEncoder.SetRow(
+                    decoder_idx, identitymatrix.GetRow(i))
+                decoder_idx += 1
 
         for i in range(self.r):
-            colindex = rowindex
-            for j in range(self.k):
-                elt = self.encoderMatrix[i,j]
-                for x in range(w):
-                    for l in range(w):
-                        check = elt & (1<<l)
-                        if check == 0:
-                            self.encoderBitmatrix[i*w+x,j*w+l] = 0
-                        else:
-                            self.encoderBitmatrix[i*w+x,j*w+l] = 1
-                    elt = self.field.Multiply(elt,2)
-        return self.encoderBitmatrix.AsList()
+            limitedEncoder.SetRow(
+                decoder_idx, self.encoderMatrix.GetRow(i))
+            decoder_idx += 1
+        self.decoderMatrix = limitedEncoder.Inverse()
+
+        decoderBitMatrix = MatrixToBitMatrix(self.decoderMatrix, w, self.field)
+        return decoderBitMatrix.AsList()
 
     def Encode(self,data):
         """
